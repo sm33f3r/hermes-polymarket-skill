@@ -144,7 +144,7 @@ def get_trending_markets(limit: int = DEFAULT_LIMIT) -> List[Dict[str, Any]]:
     }
     response = _get("/markets", params=params)
 
-    markets = response.get("data", [])
+    markets = response if isinstance(response, list) else response.get("data", [])
     parsed_markets = [_parse_market(market) for market in markets]
 
     return parsed_markets
@@ -168,7 +168,7 @@ def search_markets(query: str, limit: int = DEFAULT_LIMIT) -> List[Dict[str, Any
     }
     response = _get("/markets", params=params)
 
-    markets = response.get("data", [])
+    markets = response if isinstance(response, list) else response.get("data", [])
     parsed_markets = [_parse_market(market) for market in markets]
 
     return parsed_markets
@@ -190,7 +190,7 @@ def get_market(slug: str) -> Dict[str, Any]:
     params = {"slug": slug}
     response = _get("/markets", params=params)
 
-    markets = response.get("data", [])
+    markets = response if isinstance(response, list) else response.get("data", [])
     if not markets:
         raise RuntimeError(f"No market found with slug: {slug}")
 
