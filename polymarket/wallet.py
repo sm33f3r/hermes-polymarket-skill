@@ -148,7 +148,7 @@ def get_ctf_approval_status(address: str) -> bool:
     return allowance_raw > 0
 
 
-def get_wallet_status() -> Dict[str, Any]:
+def get_wallet_status() -> dict:
     """
     Convenience function to get comprehensive wallet status.
 
@@ -165,16 +165,13 @@ def get_wallet_status() -> Dict[str, Any]:
             ctf_approved: bool
     """
     # Get wallet address from client.py
-    address = get_wallet_address()
-
-    # Fetch all wallet data
-    pol_balance = get_pol_balance(address)
-    pusd_balance = get_pusd_balance(address)
-    ctf_approved = get_ctf_approval_status(address)
-
+    eoa_address = get_wallet_address()
+    proxy_address = os.getenv("POLYMARKET_PROXY_ADDRESS", eoa_address)
+    proxy = Web3.to_checksum_address(proxy_address)
     return {
-        "address": w3.to_checksum_address(address),
-        "pol_balance": pol_balance,
-        "pusd_balance": pusd_balance,
-        "ctf_approved": ctf_approved,
+        "address": eoa_address,
+        "proxy_address": proxy_address,
+        "pol_balance": get_pol_balance(eoa_address),
+        "pusd_balance": get_pusd_balance(proxy),
+        "ctf_approved": get_ctf_approval_status(proxy),
     }
