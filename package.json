@@ -1,0 +1,9 @@
+{
+  "name": "polymarket-exec",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@polymarket/clob-client-v2": "latest",
+    "viem": "latest"
+  }
+}
