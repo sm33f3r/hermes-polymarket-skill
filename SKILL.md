@@ -1,16 +1,16 @@
 ---
 name: polymarket
-version: 1.0.0
+version: 2.0.0
 description: Trade on Polymarket — browse markets, check wallet balances, and execute orders via the CLOB v2 API
 author: sm33f3r
 tags: [trading, polymarket, defi, prediction-markets]
 required_env:
   - POLYMARKET_PRIVATE_KEY
-  - CHAINSTACK_NODE
-optional_env:
+  - POLYMARKET_PROXY_ADDRESS
   - CLOB_API_KEY
   - CLOB_SECRET
   - CLOB_PASS_PHRASE
+  - CHAINSTACK_NODE
 ---
 
 # Polymarket Skill
@@ -24,27 +24,13 @@ discipline and always confirm trade details with the user before executing.
 
 The following environment variables must be set before any command will work:
 
-- `POLYMARKET_PRIVATE_KEY` — EVM wallet private key (Polygon mainnet)
+- `POLYMARKET_PRIVATE_KEY` — EOA wallet private key (Polygon mainnet)
+- `POLYMARKET_PROXY_ADDRESS` — Deposit wallet address (the address Polymarket debits for trades)
+- `CLOB_API_KEY` — CLOB builder API key
+- `CLOB_SECRET` — CLOB builder secret
+- `CLOB_PASS_PHRASE` — CLOB builder passphrase
 - `CHAINSTACK_NODE` — Polygon mainnet RPC URL
 
-The following are derived automatically on first run and should be saved to
-.env afterward to avoid re-deriving on every startup:
-
-- `CLOB_API_KEY`, `CLOB_SECRET`, `CLOB_PASS_PHRASE`
-
-## First-time setup
-
-On first run, if CLOB credentials are not present, the skill will derive them
-automatically from the private key and print them to the terminal. Save those
-values to your .env file immediately.
-
-Before placing any buy order, the CTF Exchange contract must be approved once:
-
-```
-polymarket wallet approve
-```
-
-This is a one-time on-chain transaction. It does not need to be repeated.
 
 ## How to run commands
 
@@ -85,23 +71,6 @@ pUSD balance: X.XX
 CTF approved: Yes / No
 ```
 
-If `ctf_approved` is False, remind the user to run `polymarket wallet approve`
-before placing any buy orders.
-
----
-
-### polymarket wallet approve
-
-One-time CTF Exchange contract approval. Required before the first buy order.
-
-```python
-from polymarket.trading import approve_ctf
-result = approve_ctf()
-print(result)
-```
-
-Inform the user when approval is confirmed. This does not need to be run again
-unless the wallet is reset.
 
 ---
 
@@ -213,7 +182,7 @@ Only execute after explicit user confirmation.
 
 ```python
 from polymarket.trading import market_sell
-result = market_sell(token_id="token-id-here", amount=100.0)
+result = market_sell(token_id="token-id-here", amount_shares=100.0)
 print(result)
 ```
 
@@ -248,10 +217,10 @@ If no open positions, say so clearly.
 
 ## Error handling guidance
 
-- If `RuntimeError` is raised during client initialisation: check that
-  `POLYMARKET_PRIVATE_KEY` and `CHAINSTACK_NODE` are set correctly.
-- If a buy order fails with a 400 error: CTF approval may not be set. Run
-  `polymarket wallet approve` first.
+- If a buy or sell command returns `{"ok": false, "error": "..."}`: surface
+  the error message to the user and wait for instruction.
+- If the error contains "Node exited": the Node.js script failed to start.
+  Check that POLYMARKET_PRIVATE_KEY and all CLOB credentials are set correctly.
 - If a FOK order is not filled: liquidity is insufficient at the current price.
   Inform the user and do not retry automatically.
 - If Gamma API calls fail: check internet connectivity. The Gamma API is public
