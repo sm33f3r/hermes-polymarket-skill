@@ -1,167 +1,126 @@
 """
-Polymarket order execution via CLOB API.
+Polymarket order execution via Node.js subprocess wrapper.
 
-This module handles CTF approval, market buy orders, and market sell orders
-using the authenticated CLOB client.
+This module provides a thin Python interface to the polymarket_exec.js
+Node.js script, which handles all CLOB API interactions.
 """
 
+import subprocess
+import json
 import logging
-import os
-from typing import Dict, Any
 
-from dotenv import load_dotenv
-from py_clob_client_v2 import (
-    MarketOrderArgs,
-    Side,
-    OrderType,
-    PartialCreateOrderOptions,
-)
-
-from polymarket.client import get_client
-
-# Load environment variables from .env file
-load_dotenv()
+# Constants
+EXEC_SCRIPT = "/opt/data/skills/polymarket/polymarket_exec.js"
+NODE_BIN = "/usr/bin/node"
 
 # Module logger
 logger = logging.getLogger(__name__)
 
 
-def approve_ctf() -> Dict[str, Any]:
+def _call_node(cmd_dict: dict) -> dict:
     """
-    Approve the CTF Exchange contract to spend conditional tokens.
-
-    This is a one-time operation required before any buy order will succeed.
-    Uses client.set_allowances() if available, otherwise tries
-    client.approve_ctf_exchange().
-
-    Returns:
-        Raw response dictionary from the client.
-
-    Raises:
-        RuntimeError: If the approval operation fails.
-    """
-    logger.info("Approving CTF Exchange contract for conditional token spending...")
-
-    try:
-        client = get_client()
-    except Exception as e:
-        raise RuntimeError(f"Failed to get authenticated CLOB client: {e}") from e
-
-    try:
-        # Try set_allowances() first
-        if hasattr(client, "set_allowances"):
-            result = client.set_allowances()
-            logger.info("set_allowances() completed successfully.")
-        elif hasattr(client, "approve_ctf_exchange"):
-            result = client.approve_ctf_exchange()
-            logger.info("approve_ctf_exchange() completed successfully.")
-        else:
-            raise RuntimeError(
-                "CLOB client has no CTF approval methods (set_allowances or approve_ctf_exchange)."
-            )
-
-        logger.info("CTF Exchange contract approved for conditional token spending.")
-        return result
-
-    except Exception as e:
-        error_msg = f"Failed to approve CTF Exchange contract: {e}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg) from e
-
-
-def market_buy(token_id: str, amount_usd: float, tick_size: str = "0.01") -> Dict[str, Any]:
-    """
-    Place a FOK (Fill or Kill) market buy order.
+    Internal helper to call the Node.js script with a command dict.
 
     Args:
-        token_id: Token identifier to buy.
-        amount_usd: Amount to spend in pUSD (not converted).
-        tick_size: Minimum price increment (default "0.01").
+        cmd_dict: Command dictionary to send to polymarket_exec.js
 
     Returns:
-        Raw response dictionary from the client.
-
-    Raises:
-        RuntimeError: If the buy order fails.
+        Parsed JSON response from the script, or error dict on failure.
     """
-    logger.info(f"Placing market buy order: token_id={token_id}, amount_usd={amount_usd}, tick_size={tick_size}")
-
     try:
-        client = get_client()
-    except Exception as e:
-        raise RuntimeError(f"Failed to get authenticated CLOB client: {e}") from e
-
-    try:
-        # Construct market order arguments
-        order_args = MarketOrderArgs(
-            token_id=token_id,
-            amount=amount_usd,
-            side=Side.BUY,
+        # Build the subprocess command
+        cmd_json = json.dumps(cmd_dict)
+        result = subprocess.run(
+            [NODE_BIN, EXEC_SCRIPT, cmd_json],
+            capture_output=True,
+            text=True,
+            timeout=30
         )
 
-        # Construct order options
-        options = PartialCreateOrderOptions(tick_size=tick_size)
+        # Handle non-zero exit code when stdout is empty
+        if result.returncode != 0 and not result.stdout.strip():
+            return {
+                "ok": False,
+                "error": f"Node exited {result.returncode}: {result.stderr}"
+            }
 
-        # Execute market buy order (FOK)
-        result = client.create_and_post_market_order(
-            order_type=OrderType.FOK,
-            market_order=order_args,
-            options=options,
-        )
-
-        logger.info(f"Market buy order submitted successfully for token_id={token_id}")
-        return result
+        # Parse and return the JSON response
+        return json.loads(result.stdout)
 
     except Exception as e:
-        error_msg = f"Market buy order failed for token_id={token_id}: {e}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg) from e
+        return {"ok": False, "error": str(e)}
 
 
-def market_sell(token_id: str, amount: float, tick_size: str = "0.01") -> Dict[str, Any]:
+def market_buy(token_id: str, amount_usd: float) -> dict:
     """
-    Place a FAK (Fill and Kill) market sell order.
+    Buy amount_usd pUSD worth of token_id.
 
     Args:
-        token_id: Token identifier to sell.
-        amount: Amount to sell in shares (not converted).
-        tick_size: Minimum price increment (default "0.01").
+        token_id: Token identifier to buy
+        amount_usd: Amount to spend in pUSD
 
     Returns:
-        Raw response dictionary from the client.
-
-    Raises:
-        RuntimeError: If the sell order fails.
+        Order result dictionary from CLOB API
     """
-    logger.info(f"Placing market sell order: token_id={token_id}, amount={amount}, tick_size={tick_size}")
+    logger.info(f"Market buy: token_id={token_id}, amount_usd={amount_usd}")
 
-    try:
-        client = get_client()
-    except Exception as e:
-        raise RuntimeError(f"Failed to get authenticated CLOB client: {e}") from e
+    cmd = {
+        "command": "buy",
+        "token_id": token_id,
+        "amount_usd": amount_usd
+    }
 
-    try:
-        # Construct market order arguments
-        order_args = MarketOrderArgs(
-            token_id=token_id,
-            amount=amount,
-            side=Side.SELL,
-        )
+    return _call_node(cmd)
 
-        # Construct order options
-        options = PartialCreateOrderOptions(tick_size=tick_size)
 
-        # Execute market sell order (FAK)
-        result = client.create_and_post_market_order(
-            order_type=OrderType.FAK,
-            market_order=order_args,
-            options=options,
-        )
+def market_sell(token_id: str, amount_shares: float) -> dict:
+    """
+    Sell amount_shares of token_id.
 
-        logger.info(f"Market sell order submitted successfully for token_id={token_id}")
-        return result
+    Args:
+        token_id: Token identifier to sell
+        amount_shares: Amount to sell in shares
 
-    except Exception as e:
-        error_msg = f"Market sell order failed for token_id={token_id}: {e}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg) from e
+    Returns:
+        Order result dictionary from CLOB API
+    """
+    logger.info(f"Market sell: token_id={token_id}, amount_shares={amount_shares}")
+
+    cmd = {
+        "command": "sell",
+        "token_id": token_id,
+        "amount_shares": amount_shares
+    }
+
+    return _call_node(cmd)
+
+
+def get_balance() -> dict:
+    """
+    Get current pUSD balance of deposit wallet.
+
+    Returns:
+        Balance dictionary with 'balance_usd' field
+    """
+    logger.info("Getting balance")
+
+    cmd = {"command": "balance"}
+    return _call_node(cmd)
+
+
+def get_positions() -> dict:
+    """
+    Get open positions for deposit wallet.
+
+    Returns:
+        Positions dictionary with 'positions' field
+    """
+    logger.info("Getting positions")
+
+    cmd = {"command": "positions"}
+    return _call_node(cmd)
+
+
+if __name__ == "__main__":
+    import json
+    print(json.dumps(get_balance(), indent=2))
