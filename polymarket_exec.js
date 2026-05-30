@@ -1,4 +1,4 @@
-import { ClobClient, Chain, Side, OrderType } from "@polymarket/clob-client-v2";
+import { ClobClient, Chain, Side, OrderType, SignatureTypeV2 } from "@polymarket/clob-client-v2";
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { polygon } from "viem/chains";
@@ -41,7 +41,8 @@ const client = new ClobClient({
   chain: Chain.POLYGON,
   signer: walletClient,
   creds,
-  funder: process.env.POLYMARKET_PROXY_ADDRESS,
+  signatureType: SignatureTypeV2.POLY_1271,
+  funderAddress: process.env.POLYMARKET_PROXY_ADDRESS,
 });
 
 function respond(obj) {
